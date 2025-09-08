@@ -27,7 +27,7 @@ import java.util.concurrent.Callable;
 @Command(name = "mvnsrch",
         mixinStandardHelpOptions = true,
         version = "mvnsrch 0.1",
-        description = "mvnsrch made with jbang")
+        description = "Search Maven Central")
 class mvnsrch implements Callable<Integer> {
     // https://central.sonatype.org/search/rest-api-guide/
     // g: https://search.maven.org/solrsearch/select?q=g:com.google.inject&rows=20&wt=json
@@ -55,6 +55,9 @@ class mvnsrch implements Callable<Integer> {
     @Option(names = {"-d", "--descending"}, description = "Sort results in descending order", defaultValue = "false")
     boolean ascending;
 
+    @CommandLine.Spec
+    CommandLine.Model.CommandSpec spec;
+
     public static void main(String... args) {
         int exitCode = new CommandLine(new mvnsrch()).execute(args);
         System.exit(exitCode);
@@ -64,8 +67,7 @@ class mvnsrch implements Callable<Integer> {
     public Integer call() throws Exception { // your business logic goes here...
         if (groupArtifact != null) {
             searchForGroupArtifact();
-        }
-        else if (className != null) {
+        } else if (className != null) {
             searchForClassName();
         } else if (fqcn != null) {
             searchForFullyQualifiedClassName();
@@ -74,7 +76,8 @@ class mvnsrch implements Callable<Integer> {
         } else if (artifactId != null) {
             searchForArtifactId();
         } else {
-            System.out.println("No search criteria provided");
+            // print the help menu if no subcommand is passed
+            spec.commandLine().usage(System.err);
             return -1;
         }
         return 0;
