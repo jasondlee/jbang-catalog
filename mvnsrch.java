@@ -29,6 +29,7 @@ import java.util.concurrent.Callable;
         version = "mvnsrch 0.1",
         description = "mvnsrch made with jbang")
 class mvnsrch implements Callable<Integer> {
+    // https://central.sonatype.org/search/rest-api-guide/
     // g: https://search.maven.org/solrsearch/select?q=g:com.google.inject&rows=20&wt=json
     // a: https://search.maven.org/solrsearch/select?q=a:guice&rows=20&wt=json
     // g+a: https://search.maven.org/solrsearch/select?q=g:com.google.inject+AND+a:guice&core=gav&rows=20&wt=json
@@ -208,27 +209,4 @@ class mvnsrch implements Callable<Integer> {
                             long timestamp,
                             List<String> tags) {
     }
-    /*
-    {
-        "id": "org.specs:specs:1.2.3",
-        "g": "org.specs",
-        "a": "specs",
-        "v": "1.2.3",
-        "p": "jar",
-        "timestamp": 1227569516000,
-        "ec": [
-          "-sources.jar",
-          ".jar",
-          "-tests.jar",
-          ".pom"
-        ],
-        "tags": [
-          "behaviour",
-          "driven",
-          "framework",
-          "design",
-          "specs"
-        ]
-      },
-     */
 }
