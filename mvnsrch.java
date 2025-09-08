@@ -145,7 +145,6 @@ class mvnsrch implements Callable<Integer> {
     }
 
     private SearchResult sendRequest(String url) {
-        System.err.println("Sending request to: " + url);
         ObjectMapper mapper = new ObjectMapper();
         try (HttpClient client = HttpClient.newHttpClient()) {
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).build();
