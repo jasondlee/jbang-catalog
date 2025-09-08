@@ -1,0 +1,10 @@
+{
+  "catalogs": {},
+  "aliases": {
+    "mvnsrch": {
+      "script-ref": "mvnsrch.java",
+      "java-agents": []
+    }
+  },
+  "templates": {}
+}
