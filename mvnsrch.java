@@ -49,7 +49,7 @@ class mvnsrch implements Callable<Integer> {
     String artifactId;
     @Option(names = {"-r", "--rows"}, description = "Number of rows to return", defaultValue = "20")
     int rows;
-    @Option(names = {"-s", "--sort"}, description = "Field to sort by: (a)rtifact, (g)group, (i)d, (v)ersion, (d)ate updated",
+    @Option(names = {"-s", "--sort"}, description = "Field to sort by: \n\t(a)rtifact,\n\t(g)group,\n\t(i)d,\n\t(v)ersion,\n\t(d)ate updated",
             defaultValue = "i")
     String sortField;
     @Option(names = {"-d", "--descending"}, description = "Sort results in descending order", defaultValue = "false")
@@ -64,7 +64,7 @@ class mvnsrch implements Callable<Integer> {
     }
 
     @Override
-    public Integer call() throws Exception { // your business logic goes here...
+    public Integer call() {
         if (groupArtifact != null) {
             searchForGroupArtifact();
         } else if (className != null) {
