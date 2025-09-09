@@ -1,5 +1,6 @@
 {
   "catalogs": {},
+  "description": "A collection of utilities developed by Jason Lee",
   "aliases": {
     "mvnsrch": {
       "script-ref": "mvnsrch.java",
