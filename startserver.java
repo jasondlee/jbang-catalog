@@ -188,7 +188,7 @@ class startserver implements Callable<Integer> {
             configName = "standalone-full-ha.xml";
         }
 
-        cliCommands.addFirst("embed-server --server-config=" + configName);
+        cliCommands.add(0, "embed-server --server-config=" + configName);
 
         Path jbossCli = Path.of(serverDir + "/bin/jboss-cli.sh");
         try (Jash jash = Jash.start(jbossCli.toFile().getAbsolutePath())
