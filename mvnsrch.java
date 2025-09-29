@@ -12,7 +12,6 @@ import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
-import javax.naming.directory.SearchResult;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -35,7 +34,7 @@ class mvnsrch implements Callable<Integer> {
     // g+a: https://search.maven.org/solrsearch/select?q=g:com.google.inject+AND+a:guice&core=gav&rows=20&wt=json
     // c: https://search.maven.org/solrsearch/select?q=c:junit&rows=20&wt=json
     // fqcn: https://search.maven.org/solrsearch/select?q=fc:org.specs.runner.JUnit&rows=20&wt=json
-    private static final String BASE_URL = "https://search.maven.org/solrsearch/select?wt=json&q=";
+    private static final String BASE_URL = "https://search.maven.org/solrsearch/select?wt=json&core=gav&q=";
 
     @Option(names = {"-ga"}, description = "Group:Artifact")
     String groupArtifact;
@@ -82,6 +81,7 @@ class mvnsrch implements Callable<Integer> {
         }
         return 0;
     }
+
 
     private void searchForArtifactId() {
         if (artifactId == null) {

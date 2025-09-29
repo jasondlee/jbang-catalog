@@ -2,10 +2,6 @@
 //JAVA 17+
 //DEPS info.picocli:picocli:4.6.3
 //DEPS dev.jbang:jash:RELEASE
-//DEPS com.fasterxml.jackson.core:jackson-core:2.20.0
-//DEPS com.fasterxml.jackson.core:jackson-databind:2.20.0
-//DEPS com.fasterxml.jackson.core:jackson-annotations:2.20
-
 
 import dev.jbang.jash.Jash;
 import picocli.CommandLine;
