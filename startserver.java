@@ -11,11 +11,13 @@ import picocli.CommandLine.Parameters;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.function.BiPredicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -61,11 +63,16 @@ class startserver implements Callable<Integer> {
         if (serverDir == null) {
             findServerDir();
         }
-        System.out.println("Using server directory: " + serverDir);
+
         if (clean) {
             cleanServer();
+        }
+
+        if (serverDir == null) {
             extractServer();
         }
+
+        System.out.println("Using server directory: " + serverDir);
 
         configureServerDebug();
         configureLogging();
@@ -78,6 +85,7 @@ class startserver implements Callable<Integer> {
     }
 
     private void cleanServer() throws IOException {
+        if (serverDir != null) {
         System.out.println("Cleaning server directory: " + serverDir);
         Files.walk(serverDir)
                 // Sort in reverse order to delete contents before the directory itself
@@ -85,11 +93,12 @@ class startserver implements Callable<Integer> {
                 .forEach(path -> {
                     try {
                         Files.delete(path);
-//                        System.out.println("Deleted: " + path);
                     } catch (IOException e) {
                         System.err.println("Error deleting " + path + ": " + e.getMessage());
                     }
                 });
+        serverDir = null;
+        }
     }
 
     private void findServerDir() throws IOException {
@@ -98,7 +107,7 @@ class startserver implements Callable<Integer> {
                 Path start = Path.of(dir + "/target");
                 if (start.toFile().exists()) {
                     try (Stream<Path> files = Files.find(start, 1,
-                            (path, attrs) -> path.getFileName().toString().startsWith(prefix))) {
+                            (path, attrs) -> isServerDir(prefix, path))) {
                         Optional<Path> found = files.findFirst();
                         if (found.isPresent()) {
                             serverDir = found.get();
@@ -108,39 +117,44 @@ class startserver implements Callable<Integer> {
                 }
             }
         }
-
-        if (serverDir == null) {
-            throw new RuntimeException("Could not find server directory");
-        }
+    }
+    private static boolean isServerDir(String prefix, Path path) {
+        return path.getFileName().toString().startsWith(prefix) &&
+                path.toFile().isDirectory() &&
+                Path.of(path + "/bin/standalone.sh").toFile().exists();
     }
 
     private void extractServer() throws IOException {
         System.out.println("Extracting server");
-        Path parent = serverDir.getParent();
-        String zipFile = null;
-        System.out.println("Looking for zip file in " + parent);
-        for (String prefix : possiblePrefixes) {
-            try (Stream<Path> files = Files.find(parent, 1,
-                    (path, attrs) -> {
-                        String fileName = path.getFileName().toString();
-                        return fileName.startsWith(prefix) && fileName.endsWith(".zip");
-                    })) {
-                Optional<Path> found = files.findFirst();
-                if (found.isPresent()) {
-                    zipFile = found.get().toFile().getAbsolutePath();
-                    break;
+        for (String parent : possibleDirs) {
+            for (String prefix : possiblePrefixes) {
+                Path start = Path.of(parent + "/target");
+                try (Stream<Path> files = Files.find(start, 1,
+                        (path, attrs) -> isServerFileArchive(prefix, path))) {
+                    Optional<Path> found = files.findFirst();
+                    if (found.isPresent()) {
+                        Path zipFile = found.get();
+                        System.out.println("    Found: " + zipFile);
+                        try (Jash unzip = Jash.start("unzip", "-o",
+                                zipFile.toFile().getAbsolutePath(), "-d",
+                                zipFile.getParent().toFile().getAbsolutePath())) {
+                            if (unzip.getExitCode() != 0) {
+                                throw new RuntimeException("Failed to extract server");
+                            }
+                        }
+                        serverDir = Path.of(zipFile.toString().replace(".zip",""));
+                        return;
+                    }
                 }
             }
         }
 
-        if (zipFile == null) {
-            throw new RuntimeException("Could not find zip file");
-        }
-        try (Jash unzip = Jash.start("unzip", "-o", zipFile, "-d", parent.toFile().getAbsolutePath())) {
-            if (unzip.getExitCode() != 0) {
-                throw new RuntimeException("Failed to extract server");
-            }
-        }
+        throw new RuntimeException("Could not find zip file");
+    }
+
+    private static boolean isServerFileArchive(String prefix, Path path) {
+        final String fileName = path.getFileName().toString();
+        return fileName.startsWith(prefix) && fileName.endsWith(".zip");
     }
 
     private void configureServerDebug() throws IOException {
@@ -149,7 +163,7 @@ class startserver implements Callable<Integer> {
                 .stream()
                 .filter(line -> !line.contains("agentlib"))
                 .collect(Collectors.joining("\n"));
-        lines += "JAVA_OPTS=\"$JAVA_OPTS -agentlib:jdwp=transport=dt_socket,address=8787,server=y,suspend=" +
+        lines += "\nJAVA_OPTS=\"$JAVA_OPTS -agentlib:jdwp=transport=dt_socket,address=8787,server=y,suspend=" +
                 (enableSuspend ? "y" : "n") + "\"";
         Files.write(configPath, lines.getBytes());
     }
@@ -179,7 +193,7 @@ class startserver implements Callable<Integer> {
     }
 
     private void executeCliCommands() {
-
+        System.out.println("Configuring the server...");
         if (useMicroprofile) {
             configName = "standalone-microprofile.xml";
         } else if (useFull) {
@@ -205,12 +219,11 @@ class startserver implements Callable<Integer> {
         if (!dryRun) {
             System.out.println("Starting server using config: " + configName);
             Path standalone = Path.of(serverDir + "/bin/standalone.sh");
-            try (Stream<String> jash = Jash.start(standalone.toFile().getAbsolutePath(),
-                            "-c",
-                            configName)
+            try (Stream<String> jash = Jash.start(standalone.toFile().getAbsolutePath(), "-c", configName)
                     .stream()
+                    .peek(System.out::println)
             ) {
-                jash.peek(System.out::println).count();
+                jash.count();
             }
         } else {
             System.out.println("Dry run, not starting server");
