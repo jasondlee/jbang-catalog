@@ -47,6 +47,8 @@ class startserver implements Callable<Integer> {
     boolean enableSuspend;
     @CommandLine.Option(names = {"-n", "--dry-run"}, description = "Don't start the server", defaultValue = "false")
     boolean dryRun;
+    @CommandLine.Option(names = {"--file"}, description = "Specify file with extra commands to run", arity = "0..*")
+    List<String> commandFile;
 
     private String configName = "standalone.xml";
     private final List<String> cliCommands = new ArrayList<>();
@@ -60,6 +62,8 @@ class startserver implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception { // your business logic goes here...
+        determineServerConfiguration();
+
         if (serverDir == null) {
             findServerDir();
         }
@@ -78,6 +82,7 @@ class startserver implements Callable<Integer> {
         configureLogging();
         configureOpenTelemetry();
         configureMicrometer();
+        loadCommandFiles();
         executeCliCommands();
         startServer();
 
@@ -192,8 +197,37 @@ class startserver implements Callable<Integer> {
         }
     }
 
+    private void loadCommandFiles() {
+        if (commandFile != null && !commandFile.isEmpty()) {
+            commandFile.forEach(fileName -> {
+                try {
+                    cliCommands.addAll(Files.readAllLines(Path.of(fileName)));
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+    }
     private void executeCliCommands() {
-        System.out.println("Configuring the server...");
+        if (!cliCommands.isEmpty()) {
+            System.out.println("Configuring the server...");
+
+            System.out.println(cliCommands);
+
+            cliCommands.add(0, "embed-server --server-config=" + configName);
+
+            Path jbossCli = Path.of(serverDir + "/bin/jboss-cli.sh");
+            try (Jash jash = Jash.start(jbossCli.toFile().getAbsolutePath())
+                    .inputStream(cliCommands.stream())) {
+                jash.stream().peek(System.out::println);
+                if (jash.getExitCode() != 0) {
+                    throw new RuntimeException("Failed to configure server");
+                }
+            }
+        }
+    }
+
+    private void determineServerConfiguration() {
         if (useMicroprofile) {
             configName = "standalone-microprofile.xml";
         } else if (useFull) {
@@ -201,17 +235,6 @@ class startserver implements Callable<Integer> {
         } else if (useHA) {
             configName = "standalone-full-ha.xml";
         }
-
-        cliCommands.add(0, "embed-server --server-config=" + configName);
-
-        Path jbossCli = Path.of(serverDir + "/bin/jboss-cli.sh");
-        try (Jash jash = Jash.start(jbossCli.toFile().getAbsolutePath())
-                .inputStream(cliCommands.stream())) {
-            if (jash.getExitCode() != 0) {
-                throw new RuntimeException("Failed to configure server");
-            }
-        }
-
     }
 
     private void startServer() {
