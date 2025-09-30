@@ -212,14 +212,12 @@ class startserver implements Callable<Integer> {
         if (!cliCommands.isEmpty()) {
             System.out.println("Configuring the server...");
 
-            System.out.println(cliCommands);
-
             cliCommands.add(0, "embed-server --server-config=" + configName);
-
+            cliCommands.forEach(it -> System.out.println("    " + it));
+            
             Path jbossCli = Path.of(serverDir + "/bin/jboss-cli.sh");
             try (Jash jash = Jash.start(jbossCli.toFile().getAbsolutePath())
                     .inputStream(cliCommands.stream())) {
-                jash.stream().peek(System.out::println);
                 if (jash.getExitCode() != 0) {
                     throw new RuntimeException("Failed to configure server");
                 }
