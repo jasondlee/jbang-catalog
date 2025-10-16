@@ -191,9 +191,10 @@ class startserver implements Callable<Integer> {
 
     private void configureMicrometer() {
         if (enableMicrometer) {
+            cliCommands.add("/subsystem=undertow:write-attribute(name=statistics-enabled,value=true)");
             cliCommands.add("/extension=org.wildfly.extension.micrometer:add");
             cliCommands.add("/subsystem=micrometer:add(endpoint=\"http://localhost:4318/v1/metrics\",step=\"1\")");
-            cliCommands.add("/subsystem=undertow:write-attribute(name=statistics-enabled,value=true)");
+            cliCommands.add("/subsystem=micrometer/registry=prometheus:add(context=\"/prometheus\", security-enabled=\"false\")");
         }
     }
 
@@ -214,12 +215,17 @@ class startserver implements Callable<Integer> {
 
             cliCommands.add(0, "embed-server --server-config=" + configName);
             cliCommands.forEach(it -> System.out.println("    " + it));
-            
+
             Path jbossCli = Path.of(serverDir + "/bin/jboss-cli.sh");
             try (Jash jash = Jash.start(jbossCli.toFile().getAbsolutePath())
                     .inputStream(cliCommands.stream())) {
-                if (jash.getExitCode() != 0) {
-                    throw new RuntimeException("Failed to configure server");
+                List<String> output = new ArrayList<>();
+                jash.stream().peek(output::add);
+                int exitCode = jash.getExitCode();
+                if (exitCode != 0) {
+                    System.out.println("output = " + output);
+                    System.err.println("Failed to configure server");
+                    System.exit(exitCode);
                 }
             }
         }

@@ -22,6 +22,7 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.function.Function;
 
 @Command(name = "mvnsrch",
         mixinStandardHelpOptions = true,
@@ -133,8 +134,9 @@ class mvnsrch implements Callable<Integer> {
 
     private void outputResults(SearchResult searchResult) {
         List<Document> docs = searchResult.response().docs();
-        
-        var width = docs.stream().map(Document::id)
+
+        Function<Document, String> formatDoc = d -> String.format("%s:%s:%s", d.groudId, d.artifactId, d.version);
+        var width = docs.stream().map(formatDoc)
                 .map(String::length)
                 .max(Integer::compareTo)
                 .orElseGet(() -> 80) + 2;
@@ -145,7 +147,7 @@ class mvnsrch implements Callable<Integer> {
         System.out.printf(format, "===========", "============");
         docs.sort(new DocComparator(sortField, ascending));
         docs.forEach(doc ->
-                System.out.printf(format, doc.id(), df.format(new Date(doc.timestamp))));
+                System.out.printf(format, formatDoc.apply(doc), df.format(new Date(doc.timestamp))));
     }
 
     private SearchResult sendRequest(String url) {
