@@ -1,9 +1,22 @@
 /// usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 17+
-//DEPS info.picocli:picocli:4.6.3
-//DEPS com.fasterxml.jackson.core:jackson-core:2.20.0
-//DEPS com.fasterxml.jackson.core:jackson-databind:2.20.0
-//DEPS com.fasterxml.jackson.core:jackson-annotations:2.20
+//DEPS info.picocli:picocli:4.7.7
+//DEPS com.fasterxml.jackson.core:jackson-core:2.21.2
+//DEPS com.fasterxml.jackson.core:jackson-databind:2.21.2
+//DEPS com.fasterxml.jackson.core:jackson-annotations:2.21
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.function.Function;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -12,21 +25,9 @@ import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
-import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.text.SimpleDateFormat;
-import java.util.Comparator;
-import java.util.Date;
-import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.function.Function;
-
 @Command(name = "mvnsrch",
         mixinStandardHelpOptions = true,
-        version = "mvnsrch 0.1",
+        version = "mvnsrch 0.2",
         description = "Search Maven Central")
 class mvnsrch implements Callable<Integer> {
     // https://central.sonatype.org/search/rest-api-guide/
@@ -41,7 +42,7 @@ class mvnsrch implements Callable<Integer> {
     String groupArtifact;
     @Option(names = {"-c", "--classname"}, description = "Simple class name")
     String className;
-    @Option(names = {"-f", "--fqcn"}, description = "Fully-qualified class name")
+    @Option(names = {"-f", "--fc", "--fqcn"}, description = "Fully-qualified class name")
     String fqcn;
     @Option(names = {"-g", "--group"}, description = "Group ID")
     String groupId;
@@ -52,11 +53,13 @@ class mvnsrch implements Callable<Integer> {
     @Option(names = {"-s", "--sort"}, description = "Field to sort by: \n\t(a)rtifact,\n\t(g)group,\n\t(i)d,\n\t(v)ersion,\n\t(d)ate updated",
             defaultValue = "i")
     String sortField;
-    @Option(names = {"-d", "--descending"}, description = "Sort results in descending order", defaultValue = "false")
+    @Option(names = {"-d", "--descending"}, description = "Sort results in descending order", defaultValue = "true")
     boolean ascending;
 
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
+
+    private List<String> parameters = new ArrayList<>();
 
     public static void main(String... args) {
         int exitCode = new CommandLine(new mvnsrch()).execute(args);
@@ -66,70 +69,39 @@ class mvnsrch implements Callable<Integer> {
     @Override
     public Integer call() {
         if (groupArtifact != null) {
-            searchForGroupArtifact();
-        } else if (className != null) {
-            searchForClassName();
-        } else if (fqcn != null) {
-            searchForFullyQualifiedClassName();
-        } else if (groupId != null) {
-            searchForGroupId();
-        } else if (artifactId != null) {
-            searchForArtifactId();
+            String[] coords = groupArtifact.split(":");
+            if (coords.length < 2) {
+                throw new RuntimeException("Invalid group:artifact coordinates");
+            }
+            parameters.add("g:" + coords[0] + "+AND+a:" + coords[1]);
         } else {
-            // print the help menu if no subcommand is passed
+            if (groupId != null) {
+                parameters.add("g:" + groupId);
+            }
+
+            if (artifactId != null) {
+                parameters.add("a:" + artifactId);
+            }
+        }
+
+        if (className != null) {
+            parameters.add("c:" + className);
+        }
+
+        if (fqcn != null) {
+            parameters.add("fc:" + (fqcn.replace("/", ".")));
+        }
+
+        if (parameters.isEmpty()) {
             spec.commandLine().usage(System.err);
             return -1;
         }
+
+        String url = BASE_URL + String.join("+AND+", parameters) + "&rows=" + rows;
+
+        outputResults(sendRequest(url));
+
         return 0;
-    }
-
-
-    private void searchForArtifactId() {
-        if (artifactId == null) {
-            throw new RuntimeException("artifactId must be specified");
-        }
-        var url = BASE_URL + "a:" + artifactId + "&rows=" + rows;
-        outputResults(sendRequest(url));
-    }
-
-    private void searchForGroupArtifact() {
-        if (groupArtifact == null) {
-            throw new RuntimeException("groupArtifact must be specified");
-        }
-
-        String[] coords = groupArtifact.split(":");
-        if (coords.length < 2) {
-            throw new RuntimeException("Invalid group:artifact coordinates");
-        }
-        var url = BASE_URL +
-                "g:" + coords[0] +
-                "+AND+a:" + coords[1] +
-                "&core=gav&rows=" + rows;
-        outputResults(sendRequest(url));
-    }
-
-    private void searchForGroupId() {
-        if (groupId == null) {
-            throw new RuntimeException("groupId must be specified");
-        }
-        var url = BASE_URL + "g:" + groupId + "&rows=" + rows;
-        outputResults(sendRequest(url));
-    }
-
-    private void searchForClassName() {
-        if (className == null) {
-            throw new RuntimeException("className must be specified");
-        }
-        var url = BASE_URL + "c:" + className + "&rows=" + rows;
-        outputResults(sendRequest(url));
-    }
-
-    private void searchForFullyQualifiedClassName() {
-        if (fqcn == null) {
-            throw new RuntimeException("Fully-qualified classname must be specified");
-        }
-        var url = BASE_URL + "fc:" + (fqcn.replace("/", ".")) + "&rows=" + rows;
-        outputResults(sendRequest(url));
     }
 
     private void outputResults(SearchResult searchResult) {
@@ -141,16 +113,18 @@ class mvnsrch implements Callable<Integer> {
                 .max(Integer::compareTo)
                 .orElseGet(() -> 80) + 2;
         var format = "%-" + width + "s%s\n";
-        
+
         var df = new SimpleDateFormat("yyyy-MM-dd hh:mm aa (zzz)");
         System.out.printf(format, "Coordinates", "Last Updated");
         System.out.printf(format, "===========", "============");
-        docs.sort(new DocComparator(sortField, ascending));
-        docs.forEach(doc ->
-                System.out.printf(format, formatDoc.apply(doc), df.format(new Date(doc.timestamp))));
+        docs.stream()
+                .sorted(new DocComparator(sortField, ascending))
+                .forEach(doc ->
+                        System.out.printf(format, formatDoc.apply(doc), df.format(new Date(doc.timestamp))));
     }
 
     private SearchResult sendRequest(String url) {
+        System.out.println("Sending request to: " + url);
         ObjectMapper mapper = new ObjectMapper();
         try (HttpClient client = HttpClient.newHttpClient()) {
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).build();
@@ -163,31 +137,6 @@ class mvnsrch implements Callable<Integer> {
             } catch (IOException | InterruptedException e) {
                 throw new RuntimeException(e);
             }
-        }
-    }
-
-    private static class DocComparator implements Comparator<Document> {
-        private final String field;
-        private final boolean ascending;
-
-        public DocComparator(String field, boolean ascending) {
-            this.field = field;
-            this.ascending = ascending;
-        }
-
-        @Override
-        public int compare(Document d1, Document d2) {
-            return switch (field) {
-                case "i" -> compare(d1.id(), d2.id(), ascending);
-                case "g" -> compare(d1.groudId(), d2.groudId(), ascending);
-                case "a" -> compare(d1.artifactId(), d2.artifactId(), ascending);
-                case "v" -> compare(d1.version(), d2.version(), ascending);
-                default -> Long.compare(d2.timestamp, d1.timestamp); // TODO
-            };
-        }
-
-        private int compare(String one, String two, boolean ascending) {
-            return (!ascending) ? one.compareTo(two) : two.compareTo(one);
         }
     }
 
@@ -213,5 +162,23 @@ class mvnsrch implements Callable<Integer> {
                             String packaging,
                             long timestamp,
                             List<String> tags) {
+    }
+
+    private record DocComparator(String field, boolean ascending) implements Comparator<Document> {
+
+        @Override
+        public int compare(Document d1, Document d2) {
+            return switch (field) {
+                case "i" -> compare(d1.id(), d2.id(), ascending);
+                case "g" -> compare(d1.groudId(), d2.groudId(), ascending);
+                case "a" -> compare(d1.artifactId(), d2.artifactId(), ascending);
+                case "v" -> compare(d1.version(), d2.version(), ascending);
+                default -> Long.compare(d2.timestamp, d1.timestamp); // TODO
+            };
+        }
+
+        private int compare(String one, String two, boolean ascending) {
+            return (!ascending) ? one.compareTo(two) : two.compareTo(one);
+        }
     }
 }
