@@ -36,10 +36,10 @@ JBang can install any script as a command on your `PATH`:
 
 [source,bash]
 ----
+jbang app install base64@jdlee
+jbang app install maven-dep-graph@jdlee
 jbang app install mvnsrch@jdlee
 jbang app install startserver@jdlee
-jbang app install maven-dep-graph@jdlee
-jbang app install base64@jdlee
 ----
 
 After installation, run them directly without `jbang`:
@@ -47,6 +47,109 @@ After installation, run them directly without `jbang`:
 [source,bash]
 ----
 mvnsrch -g com.google.inject
+----
+
+== base64
+
+Encode or decode files to/from Base64.
+
+=== Usage
+
+[source]
+----
+base64 [-hvde] [-o=<outputFile>] <fileName>
+----
+
+=== Options
+
+[cols="1,3"]
+|===
+| Option | Description
+
+| `<fileName>`
+| The input file to process
+
+| `-e, --encode`
+| Encode the file to Base64
+
+| `-d, --decode`
+| Decode the file from Base64
+
+| `-o, --outputFile`
+| Output file path
+|===
+
+=== Examples
+
+Encode a file:
+
+[source,bash]
+----
+$ jbang base64@jdlee -e -o image.b64 photo.png
+----
+
+Decode it back:
+
+[source,bash]
+----
+$ jbang base64@jdlee -d -o photo-restored.png image.b64
+----
+
+== maven-dep-graph
+
+Build a https://graphviz.org/doc/info/lang.html[DOT] dependency graph from one or more Maven coordinates.
+Fetches POM files from Maven Central (or a custom repository) and recursively walks the dependency tree.
+
+Pipe the output through https://graphviz.org/[Graphviz] `dot` to render an image.
+
+=== Usage
+
+[source]
+----
+maven-dep-graph [-hv] -a=<artifacts> [-r=<repository>] [-o=<outputFile>]
+----
+
+=== Options
+
+[cols="1,3"]
+|===
+| Option | Description
+
+| `-a, --artifact`
+| Maven coordinates in `groupId:artifactId:version` format (required, repeatable)
+
+| `-r, --repository`
+| Maven repository URL (default: `https://repo1.maven.org/maven2`)
+
+| `-o, --outputFile`
+| Write DOT output to a file instead of stdout
+|===
+
+=== Examples
+
+Generate a dependency graph for JUnit Jupiter and render it as a PNG:
+
+[source,bash]
+----
+$ jbang maven-dep-graph@jdlee -a org.junit.jupiter:junit-jupiter:6.1.0 | dot -Tpng -o junit-dep-graph.png
+----
+
+.Dependency graph for `org.junit.jupiter:junit-jupiter:6.1.0`
+image::images/junit-dep-graph.png[JUnit Jupiter dependency graph]
+
+Write the DOT file to disk for later processing:
+
+[source,bash]
+----
+$ jbang maven-dep-graph@jdlee -a org.junit.jupiter:junit-jupiter:6.1.0 -o deps.dot
+$ dot -Tsvg deps.dot -o deps.svg
+----
+
+Use a custom repository:
+
+[source,bash]
+----
+$ jbang maven-dep-graph@jdlee -a com.example:my-lib:1.0.0 -r https://my-nexus.example.com/repository/maven-public
 ----
 
 == mvnsrch
@@ -217,107 +320,4 @@ Apply extra CLI commands from a file:
 [source,bash]
 ----
 $ jbang startserver@jdlee --file=my-commands.cli
-----
-
-== maven-dep-graph
-
-Build a https://graphviz.org/doc/info/lang.html[DOT] dependency graph from one or more Maven coordinates.
-Fetches POM files from Maven Central (or a custom repository) and recursively walks the dependency tree.
-
-Pipe the output through https://graphviz.org/[Graphviz] `dot` to render an image.
-
-=== Usage
-
-[source]
-----
-maven-dep-graph [-hv] -a=<artifacts> [-r=<repository>] [-o=<outputFile>]
-----
-
-=== Options
-
-[cols="1,3"]
-|===
-| Option | Description
-
-| `-a, --artifact`
-| Maven coordinates in `groupId:artifactId:version` format (required, repeatable)
-
-| `-r, --repository`
-| Maven repository URL (default: `https://repo1.maven.org/maven2`)
-
-| `-o, --outputFile`
-| Write DOT output to a file instead of stdout
-|===
-
-=== Examples
-
-Generate a dependency graph for JUnit Jupiter and render it as a PNG:
-
-[source,bash]
-----
-$ jbang maven-dep-graph@jdlee -a org.junit.jupiter:junit-jupiter:6.1.0 | dot -Tpng -o junit-dep-graph.png
-----
-
-.Dependency graph for `org.junit.jupiter:junit-jupiter:6.1.0`
-image::images/junit-dep-graph.png[JUnit Jupiter dependency graph]
-
-Write the DOT file to disk for later processing:
-
-[source,bash]
-----
-$ jbang maven-dep-graph@jdlee -a org.junit.jupiter:junit-jupiter:6.1.0 -o deps.dot
-$ dot -Tsvg deps.dot -o deps.svg
-----
-
-Use a custom repository:
-
-[source,bash]
-----
-$ jbang maven-dep-graph@jdlee -a com.example:my-lib:1.0.0 -r https://my-nexus.example.com/repository/maven-public
-----
-
-== base64
-
-Encode or decode files to/from Base64.
-
-=== Usage
-
-[source]
-----
-base64 [-hvde] [-o=<outputFile>] <fileName>
-----
-
-=== Options
-
-[cols="1,3"]
-|===
-| Option | Description
-
-| `<fileName>`
-| The input file to process
-
-| `-e, --encode`
-| Encode the file to Base64
-
-| `-d, --decode`
-| Decode the file from Base64
-
-| `-o, --outputFile`
-| Output file path
-|===
-
-=== Examples
-
-Encode a file:
-
-[source,bash]
-----
-$ jbang base64@jdlee -e -o image.b64 photo.png
-----
-
-Decode it back:
-
-[source,bash]
-----
-$ jbang base64@jdlee -d -o photo-restored.png image.b64
 ----
