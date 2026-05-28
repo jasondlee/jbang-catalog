@@ -1,92 +1,105 @@
 /// usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 17+
-//DEPS info.picocli:picocli:4.6.3
+//DEPS org.aesh:aesh:3.8
 //DEPS dev.jbang:jash:RELEASE
 
 import dev.jbang.jash.Jash;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Parameters;
+import org.aesh.AeshRuntimeRunner;
+import org.aesh.command.Command;
+import org.aesh.command.CommandDefinition;
+import org.aesh.command.CommandResult;
+import org.aesh.command.invocation.CommandInvocation;
+import org.aesh.command.option.Argument;
+import org.aesh.command.option.Option;
+import org.aesh.command.option.OptionList;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.Callable;
-import java.util.function.BiPredicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-@Command(name = "startserver",
-        mixinStandardHelpOptions = true,
-        version = "startserver 0.1",
+@CommandDefinition(name = "startserver",
         description = "A script to manage starting a WildFly/EAP server",
-        helpCommand = true)
-class startserver implements Callable<Integer> {
-    @Parameters(index = "0", description = "The working directory of the server", arity = "0..1")
-    Path serverDir;
-    @CommandLine.Option(names = {"-c"}, description = "Clean and rebuild the server before starting", defaultValue = "false")
-    boolean clean;
-    @CommandLine.Option(names = {"-L", "--logging"}, description = "Set logging level to DEBUG", defaultValue = "false")
-    boolean debugLogging;
-    @CommandLine.Option(names = {"-O", "--otel", "--opentelemetry"}, description = "Enable OpenTelemetry", defaultValue = "false")
-    boolean enableOtel;
-    @CommandLine.Option(names = {"-M", "--micrometer"}, description = "Enable Micrometer", defaultValue = "false")
-    boolean enableMicrometer;
-    @CommandLine.Option(names = {"-m", "--microprofile"}, description = "Start the server using the standard-micropfile configuration", defaultValue = "false")
-    boolean useMicroprofile;
-    @CommandLine.Option(names = {"-f", "--full"}, description = "Start the server using the standard-full configuration", defaultValue = "false")
-    boolean useFull;
-    @CommandLine.Option(names = {"--ha"}, description = "Start the server using the standard-full-ha configuration", defaultValue = "false")
-    boolean useHA;
-    @CommandLine.Option(names = {"-s", "--suspend"}, description = "Enable suspend on start for debug", defaultValue = "false")
-    boolean enableSuspend;
-    @CommandLine.Option(names = {"-n", "--dry-run"}, description = "Don't start the server", defaultValue = "false")
-    boolean dryRun;
-    @CommandLine.Option(names = {"--file"}, description = "Specify file with extra commands to run", arity = "0..*")
-    List<String> commandFile;
+        version = "1.0",
+        generateHelp = true)
+public class startserver implements Command<CommandInvocation> {
+    @Argument(description = "The working directory of the server")
+    private String serverDirArg;
+    @Option(shortName = 'c', hasValue = false, description = "Clean and rebuild the server before starting")
+    private boolean clean;
+    @Option(shortName = 'L', name = "logging", hasValue = false, description = "Set logging level to DEBUG")
+    private boolean debugLogging;
+    @Option(shortName = 'O', name = "otel", aliases = {"opentelemetry"}, hasValue = false, description = "Enable OpenTelemetry")
+    private boolean enableOtel;
+    @Option(shortName = 'M', name = "micrometer", hasValue = false, description = "Enable Micrometer")
+    private boolean enableMicrometer;
+    @Option(shortName = 'm', name = "microprofile", hasValue = false, description = "Start the server using the standard-microprofile configuration")
+    private boolean useMicroprofile;
+    @Option(shortName = 'f', name = "full", hasValue = false, description = "Start the server using the standard-full configuration")
+    private boolean useFull;
+    @Option(name = "ha", hasValue = false, description = "Start the server using the standard-full-ha configuration")
+    private boolean useHA;
+    @Option(shortName = 's', name = "suspend", hasValue = false, description = "Enable suspend on start for debug")
+    private boolean enableSuspend;
+    @Option(shortName = 'n', name = "dry-run", hasValue = false, description = "Don't start the server")
+    private boolean dryRun;
+    @OptionList(name = "file", description = "Specify file with extra commands to run")
+    private List<String> commandFile;
 
+    private Path serverDir;
     private String configName = "standalone.xml";
     private final List<String> cliCommands = new ArrayList<>();
     private final List<String> possibleDirs = List.of("build", "dist");
     private final List<String> possiblePrefixes = List.of("wildfly", "jboss-eap");
 
-    public static void main(String... args) {
-        int exitCode = new CommandLine(new startserver()).execute(args);
-        System.exit(exitCode);
+    public static void main(String[] args) {
+        AeshRuntimeRunner.builder()
+                .command(startserver.class)
+                .args(args)
+                .execute();
     }
 
     @Override
-    public Integer call() throws Exception { // your business logic goes here...
-        determineServerConfiguration();
+    public CommandResult execute(CommandInvocation invocation) {
+        try {
+            if (serverDirArg != null) {
+                serverDir = Path.of(serverDirArg);
+            }
 
-        if (serverDir == null) {
-            findServerDir();
+            determineServerConfiguration();
+
+            if (serverDir == null) {
+                findServerDir();
+            }
+
+            if (clean) {
+                cleanServer();
+            }
+
+            if (serverDir == null) {
+                extractServer();
+            }
+
+            System.out.println("Using server directory: " + serverDir);
+
+            configureServerDebug();
+            configureLogging();
+            configureOpenTelemetry();
+            configureMicrometer();
+            loadCommandFiles();
+            executeCliCommands();
+            startServer();
+
+            return CommandResult.SUCCESS;
+        } catch (Exception e) {
+            System.err.println("Error: " + e.getMessage());
+            return CommandResult.FAILURE;
         }
-
-        if (clean) {
-            cleanServer();
-        }
-
-        if (serverDir == null) {
-            extractServer();
-        }
-
-        System.out.println("Using server directory: " + serverDir);
-
-        configureServerDebug();
-        configureLogging();
-        configureOpenTelemetry();
-        configureMicrometer();
-        loadCommandFiles();
-        executeCliCommands();
-        startServer();
-
-        return 0;
     }
 
     private void cleanServer() throws IOException {

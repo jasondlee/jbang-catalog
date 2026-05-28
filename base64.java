@@ -1,54 +1,66 @@
 /// usr/bin/env jbang "$0" "$@" ; exit $?
-//DEPS info.picocli:picocli:4.6.3
+//DEPS org.aesh:aesh:3.8
 //JAVA 17+
 
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Parameters;
+import org.aesh.AeshRuntimeRunner;
+import org.aesh.command.Command;
+import org.aesh.command.CommandDefinition;
+import org.aesh.command.CommandResult;
+import org.aesh.command.invocation.CommandInvocation;
+import org.aesh.command.option.Argument;
+import org.aesh.command.option.Option;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Base64;
-import java.util.concurrent.Callable;
 
-@Command(name = "base64", mixinStandardHelpOptions = true, version = "base64 0.1",
-        description = "base64 made with jbang")
-class base64 implements Callable<Integer> {
-    @CommandLine.Option(names = {"-d"}, description = "Decode file")
+@CommandDefinition(name = "base64",
+        description = "base64 made with jbang",
+        version = "0.1",
+        generateHelp = true)
+public class base64 implements Command<CommandInvocation> {
+    @Option(shortName = 'd', hasValue = false, description = "Decode file")
     boolean decode;
 
-    @CommandLine.Option(names = {"-e"}, description = "Encode file")
+    @Option(shortName = 'e', hasValue = false, description = "Encode file")
     boolean encode;
 
-    @CommandLine.Option(names = {"-o"}, description = "Output file", arity = "1")
+    @Option(shortName = 'o', description = "Output file")
     String outputFile;
 
-    @Parameters(index = "0", description = "The file to process", arity = "1")
+    @Argument(required = true, description = "The file to process")
     String fileName;
 
     public static void main(String... args) {
-        int exitCode = new CommandLine(new base64()).execute(args);
-        System.exit(exitCode);
+        AeshRuntimeRunner.builder()
+                .command(base64.class)
+                .args(args)
+                .execute();
     }
 
     @Override
-    public Integer call() throws Exception { // your business logic goes here...
+    public CommandResult execute(CommandInvocation invocation) throws InterruptedException {
         if (encode && decode) {
             System.err.println("Can not encode and decode simultaneously.");
-            System.exit(1);
+            return CommandResult.FAILURE;
         }
 
-        byte[] bytes = Files.readAllBytes(Path.of(fileName));
+        try {
+            byte[] bytes = Files.readAllBytes(Path.of(fileName));
 
-        if (encode) {
-            outputEncodedFile(Base64.getEncoder().encode(bytes));
-        } else {
-            outputEncodedFile(Base64.getDecoder().decode(bytes));
+            if (encode) {
+                outputEncodedFile(Base64.getEncoder().encode(bytes));
+            } else {
+                outputEncodedFile(Base64.getDecoder().decode(bytes));
+            }
+
+            return CommandResult.SUCCESS;
+        } catch (IOException e) {
+            System.err.println("Error reading file: " + e.getMessage());
+            return CommandResult.FAILURE;
         }
-
-        return 0;
     }
 
     private void outputEncodedFile(byte[] bytes) {

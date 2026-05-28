@@ -8,6 +8,9 @@
     },
     "maven-dep-graph": {
       "script-ref": "MavenDepGraph.java"
+    },
+    "base64": {
+      "script-ref": "base64.java"
     }
   },
   "description": "A collection of utilities developed by Jason Lee"

@@ -1,6 +1,6 @@
 /// usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 17+
-//DEPS info.picocli:picocli:4.7.7
+//DEPS org.aesh:aesh:3.8
 //DEPS com.fasterxml.jackson.core:jackson-core:2.21.2
 //DEPS com.fasterxml.jackson.core:jackson-databind:2.21.2
 //DEPS com.fasterxml.jackson.core:jackson-annotations:2.21
@@ -15,59 +15,55 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
-import java.util.concurrent.Callable;
 import java.util.function.Function;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
+import org.aesh.AeshRuntimeRunner;
+import org.aesh.command.Command;
+import org.aesh.command.CommandDefinition;
+import org.aesh.command.CommandResult;
+import org.aesh.command.invocation.CommandInvocation;
+import org.aesh.command.option.Option;
 
-@Command(name = "mvnsrch",
-        mixinStandardHelpOptions = true,
-        version = "mvnsrch 0.2",
-        description = "Search Maven Central")
-class mvnsrch implements Callable<Integer> {
+@CommandDefinition(name = "mvnsrch",
+        description = "Search Maven Central",
+        version = "1.1",
+        generateHelp = true)
+public class mvnsrch implements Command<CommandInvocation> {
     // https://central.sonatype.org/search/rest-api-guide/
-    // g: https://search.maven.org/solrsearch/select?q=g:com.google.inject&rows=20&wt=json
-    // a: https://search.maven.org/solrsearch/select?q=a:guice&rows=20&wt=json
-    // g+a: https://search.maven.org/solrsearch/select?q=g:com.google.inject+AND+a:guice&core=gav&rows=20&wt=json
-    // c: https://search.maven.org/solrsearch/select?q=c:junit&rows=20&wt=json
-    // fqcn: https://search.maven.org/solrsearch/select?q=fc:org.specs.runner.JUnit&rows=20&wt=json
     private static final String BASE_URL = "https://search.maven.org/solrsearch/select?wt=json&core=gav&q=";
 
-    @Option(names = {"-ga"}, description = "Group:Artifact")
+    @Option(name = "ga", description = "Group:Artifact")
     String groupArtifact;
-    @Option(names = {"-c", "--classname"}, description = "Simple class name")
+    @Option(shortName = 'c', name = "classname", description = "Simple class name")
     String className;
-    @Option(names = {"-f", "--fc", "--fqcn"}, description = "Fully-qualified class name")
+    @Option(shortName = 'f', name = "fc", aliases = {"fqcn"}, description = "Fully-qualified class name")
     String fqcn;
-    @Option(names = {"-g", "--group"}, description = "Group ID")
+    @Option(shortName = 'g', name = "group", description = "Group ID")
     String groupId;
-    @Option(names = {"-a", "--artifact"}, description = "Artifact ID")
+    @Option(shortName = 'a', name = "artifact", description = "Artifact ID")
     String artifactId;
-    @Option(names = {"-r", "--rows"}, description = "Number of rows to return", defaultValue = "20")
+    @Option(shortName = 'r', name = "rows", description = "Number of rows to return", defaultValue = "20")
     int rows;
-    @Option(names = {"-s", "--sort"}, description = "Field to sort by: \n\t(a)rtifact,\n\t(g)group,\n\t(i)d,\n\t(v)ersion,\n\t(d)ate updated",
+    @Option(shortName = 's', name = "sort", description = "Field to sort by: (a)rtifact, (g)group, (i)d, (v)ersion, (d)ate updated",
             defaultValue = "i")
     String sortField;
-    @Option(names = {"-d", "--descending"}, description = "Sort results in descending order", defaultValue = "true")
-    boolean ascending;
-
-    @CommandLine.Spec
-    CommandLine.Model.CommandSpec spec;
+    @Option(shortName = 'd', name = "descending", hasValue = false, description = "Sort results in descending order")
+    boolean descending;
 
     private List<String> parameters = new ArrayList<>();
 
     public static void main(String... args) {
-        int exitCode = new CommandLine(new mvnsrch()).execute(args);
-        System.exit(exitCode);
+        AeshRuntimeRunner.builder()
+                .command(mvnsrch.class)
+                .args(args)
+                .execute();
     }
 
     @Override
-    public Integer call() {
+    public CommandResult execute(CommandInvocation invocation) {
         if (groupArtifact != null) {
             String[] coords = groupArtifact.split(":");
             if (coords.length < 2) {
@@ -93,15 +89,15 @@ class mvnsrch implements Callable<Integer> {
         }
 
         if (parameters.isEmpty()) {
-            spec.commandLine().usage(System.err);
-            return -1;
+            System.err.println("Error: At least one search parameter is required (--ga, -g, -a, -c, or -f)");
+            return CommandResult.FAILURE;
         }
 
         String url = BASE_URL + String.join("+AND+", parameters) + "&rows=" + rows;
 
         outputResults(sendRequest(url));
 
-        return 0;
+        return CommandResult.SUCCESS;
     }
 
     private void outputResults(SearchResult searchResult) {
@@ -118,7 +114,7 @@ class mvnsrch implements Callable<Integer> {
         System.out.printf(format, "Coordinates", "Last Updated");
         System.out.printf(format, "===========", "============");
         docs.stream()
-                .sorted(new DocComparator(sortField, ascending))
+                .sorted(new DocComparator(sortField, descending))
                 .forEach(doc ->
                         System.out.printf(format, formatDoc.apply(doc), df.format(new Date(doc.timestamp))));
     }
@@ -163,21 +159,21 @@ class mvnsrch implements Callable<Integer> {
                             List<String> tags) {
     }
 
-    private record DocComparator(String field, boolean ascending) implements Comparator<Document> {
+    private record DocComparator(String field, boolean descending) implements Comparator<Document> {
 
         @Override
         public int compare(Document d1, Document d2) {
             return switch (field) {
-                case "i" -> compare(d1.id(), d2.id(), ascending);
-                case "g" -> compare(d1.groudId(), d2.groudId(), ascending);
-                case "a" -> compare(d1.artifactId(), d2.artifactId(), ascending);
-                case "v" -> compare(d1.version(), d2.version(), ascending);
-                default -> Long.compare(d2.timestamp, d1.timestamp); // TODO
+                case "i" -> compare(d1.id(), d2.id(), descending);
+                case "g" -> compare(d1.groudId(), d2.groudId(), descending);
+                case "a" -> compare(d1.artifactId(), d2.artifactId(), descending);
+                case "v" -> compare(d1.version(), d2.version(), descending);
+                default -> Long.compare(d2.timestamp, d1.timestamp);
             };
         }
 
-        private int compare(String one, String two, boolean ascending) {
-            return (!ascending) ? one.compareTo(two) : two.compareTo(one);
+        private int compare(String one, String two, boolean descending) {
+            return descending ? two.compareTo(one) : one.compareTo(two);
         }
     }
 }
