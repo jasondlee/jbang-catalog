@@ -5,6 +5,9 @@
     },
     "startserver": {
       "script-ref": "startserver.java"
+    },
+    "maven-dep-graph": {
+      "script-ref": "MavenDepGraph.java"
     }
   },
   "description": "A collection of utilities developed by Jason Lee"
