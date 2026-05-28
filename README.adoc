@@ -1,7 +1,6 @@
 = JBang Catalog
 Jason Lee
 :toc: macro
-:toc-title: Scripts
 :icons: font
 :source-highlighter: rouge
 
@@ -116,7 +115,7 @@ Search by group and artifact:
 $ jbang mvnsrch@jdlee --ga com.google.inject:guice
 ----
 
-Search by fully-qualified class name:
+Search by fully qualified class name:
 
 [source,bash]
 ----
