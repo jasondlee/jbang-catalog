@@ -3,6 +3,13 @@
 //DEPS org.apache.maven:maven-model:3.9.16
 //DEPS org.apache.maven:maven-model-builder:3.9.16
 //DEPS guru.nidi:graphviz-java:0.18.1
+//tmp
+//DEPS dev.tamboui:tamboui-toolkit:0.3.0
+//DEPS dev.tamboui:tamboui-jline3-backend:0.3.0
+//DEPS com.fasterxml.jackson.core:jackson-core:2.21.2
+//DEPS com.fasterxml.jackson.core:jackson-databind:2.21.2
+//DEPS com.fasterxml.jackson.core:jackson-annotations:2.21
+//DEPS dev.jbang:jash:RELEASE
 //JAVA 17+
 
 import java.io.File;
@@ -19,6 +26,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -93,15 +101,19 @@ public class MavenDepGraph implements Command<CommandInvocation> {
     private void processArtifact(Dependency parent) throws IOException, ModelBuildingException, UnresolvableModelException {
         String parentGav = depToGav(parent);
         if (!deps.containsKey(parentGav)) {
-            Model model = pomResolver.resolve(parent.getGroupId(), parent.getArtifactId(), parent.getVersion());
-            List<String> localDeps = deps.computeIfAbsent(parentGav, k -> new ArrayList<>());
-            for (Dependency dep : model.getDependencies()) {
-                try {
-                    localDeps.add(depToGav(dep));
-                    processArtifact(dep);
-                } catch (IOException | ModelBuildingException e) {
-                    System.out.println("WARNING: Unable to build model for " + dep);
+            try {
+                Model model = pomResolver.resolve(parent.getGroupId(), parent.getArtifactId(), parent.getVersion());
+                List<String> localDeps = deps.computeIfAbsent(parentGav, k -> new ArrayList<>());
+                for (Dependency dep : model.getDependencies()) {
+                    try {
+                        localDeps.add(depToGav(dep));
+                        processArtifact(dep);
+                    } catch (IOException | ModelBuildingException e) {
+                        System.err.println("WARNING: Unable to build model for " + dep);
+                    }
                 }
+            } catch (ModelBuildingException | UnresolvableModelException e) {
+                System.err.println("WARNING: Unable to resolve model for " + parent);
             }
         }
     }
