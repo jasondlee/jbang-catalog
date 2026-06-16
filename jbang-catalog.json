@@ -11,6 +11,9 @@
     },
     "base64": {
       "script-ref": "base64.java"
+    },
+    "modulecheck": {
+      "script-ref": "modulecheck.java"
     }
   },
   "description": "A collection of utilities developed by Jason Lee"

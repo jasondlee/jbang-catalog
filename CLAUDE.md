@@ -23,6 +23,7 @@ Registered in `jbang-catalog.json`:
 - **startserver** — Manage WildFly/EAP server startup with CLI configuration (Aesh + Jash).
 - **maven-dep-graph** — Build a DOT dependency graph from Maven coordinates (Aesh + maven-model).
 - **base64** — Encode/decode files to/from Base64 (Aesh).
+- **modulecheck** — Identify potentially unnecessary JARs in WildFly/JBoss module definitions (Aesh + Tamboui).
 
 ## Conventions
 
