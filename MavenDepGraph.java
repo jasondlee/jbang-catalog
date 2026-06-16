@@ -99,6 +99,9 @@ public class MavenDepGraph implements Command<CommandInvocation> {
     }
 
     private void processArtifact(Dependency parent) throws IOException, ModelBuildingException, UnresolvableModelException {
+        if ("test".equals(parent.getScope())) {
+            return;
+        }
         String parentGav = depToGav(parent);
         if (!deps.containsKey(parentGav)) {
             try {
