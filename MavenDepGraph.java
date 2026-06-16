@@ -160,11 +160,16 @@ public class MavenDepGraph implements Command<CommandInvocation> {
     }
 
     private Format getFormat(String option) {
-        return switch (option) {
+        Format format = switch (option) {
             case "png" -> Format.PNG;
             case "svg" -> Format.SVG;
             case "dot" -> Format.DOT;
-            default -> throw new RuntimeException("Invalid format: " + option);
+            default -> null;
         };
+        if (format == null) {
+            System.err.println("Invalid format: " + option);
+            System.exit(-1);
+        }
+        return format;
     }
 }
