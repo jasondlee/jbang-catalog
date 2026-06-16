@@ -48,6 +48,8 @@ public class startserver implements Command<CommandInvocation> {
     private boolean enableSuspend;
     @Option(shortName = 'n', name = "dry-run", hasValue = false, description = "Don't start the server")
     private boolean dryRun;
+    @Option(shortName = 'S', name = "secman", hasValue = false, description = "Enable security manager")
+    private boolean enableSecMan;
     @OptionList(name = "file", description = "Specify file with extra commands to run")
     private List<String> commandFile;
 
@@ -259,7 +261,13 @@ public class startserver implements Command<CommandInvocation> {
         if (!dryRun) {
             System.out.println("Starting server using config: " + configName);
             Path standalone = Path.of(serverDir + "/bin/standalone.sh");
-            try (Stream<String> jash = Jash.start(standalone.toFile().getAbsolutePath(), "-c", configName)
+            var args = new ArrayList<String>();
+            args.add("-c");
+            args.add(configName);
+            if (enableSecMan) {
+                args.add("-secmgr");
+            }
+            try (Stream<String> jash = Jash.start(standalone.toFile().getAbsolutePath(), args.toArray(String[]::new))
                     .stream()
                     .peek(System.out::println)
             ) {

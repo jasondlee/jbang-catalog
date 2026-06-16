@@ -30,7 +30,10 @@ public class base64 implements Command<CommandInvocation> {
     @Option(shortName = 'o', description = "Output file")
     String outputFile;
 
-    @Argument(required = true, description = "The file to process")
+    @Option(shortName = 'i', hasValue = false, description = "Read from stdin")
+    boolean readFromStdin;
+
+    @Argument(description = "The file to process", required = false)
     String fileName;
 
     public static void main(String... args) {
@@ -47,8 +50,27 @@ public class base64 implements Command<CommandInvocation> {
             return CommandResult.FAILURE;
         }
 
+        if (!readFromStdin && fileName == null) {
+            System.err.println("Either file name or stdin must be provided.");
+            return CommandResult.FAILURE;
+        }
+
         try {
-            byte[] bytes = Files.readAllBytes(Path.of(fileName));
+            byte[] bytes;
+            if (readFromStdin) {
+                bytes = invocation.getStdin().readAllBytes();
+                if (bytes.length == 0) {
+                    System.err.println("No data provided on stdin.");
+                    return CommandResult.FAILURE;
+                }
+            } else {
+                bytes = Files.readAllBytes(Path.of(fileName));
+            }
+
+            if (bytes.length == 0) {
+                System.err.println("No data to process.");
+                return CommandResult.FAILURE;
+            }
 
             if (encode) {
                 outputEncodedFile(Base64.getEncoder().encode(bytes));
@@ -65,7 +87,12 @@ public class base64 implements Command<CommandInvocation> {
 
     private void outputEncodedFile(byte[] bytes) {
         try {
-            Files.write(Paths.get(outputFile), bytes);
+            if (outputFile == null) {
+                System.out.write(bytes);
+                System.out.println();
+            } else {
+                Files.write(Paths.get(outputFile), bytes);
+            }
         } catch (IOException e) {
             System.err.println("Unable to write to file: " + e.getMessage());
         }
