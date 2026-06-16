@@ -126,7 +126,7 @@ maven-dep-graph [-hv] -a=<artifacts> [-r=<repository>] [-o=<outputFile>]
 | Maven repository URL (default: `https://repo1.maven.org/maven2`)
 
 | `-o, --outputFile`
-| Write DOT output to a file instead of stdout
+| Write output to a file instead of stdout. The format of the file will be determined by the extension. Supported formats: png, svg, dot
 |===
 
 === Examples
@@ -135,7 +135,7 @@ Generate a dependency graph for JUnit Jupiter and render it as a PNG:
 
 [source,bash]
 ----
-$ jbang maven-dep-graph@jdlee -a org.junit.jupiter:junit-jupiter:6.1.0 | dot -Tpng -o junit-dep-graph.png
+$ jbang maven-dep-graph@jdlee -a org.junit.jupiter:junit-jupiter:6.1.0 -o junit-dep-graph.png
 ----
 
 .Dependency graph for `org.junit.jupiter:junit-jupiter:6.1.0`
