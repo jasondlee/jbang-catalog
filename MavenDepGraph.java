@@ -9,6 +9,8 @@
 //DEPS com.fasterxml.jackson.core:jackson-core:2.21.2
 //DEPS com.fasterxml.jackson.core:jackson-databind:2.21.2
 //DEPS com.fasterxml.jackson.core:jackson-annotations:2.21
+//DEPS org.apache.maven.resolver:maven-resolver-supplier:1.9.27
+//DEPS org.apache.maven:maven-resolver-provider:3.9.16
 //DEPS dev.jbang:jash:RELEASE
 //JAVA 17+
 
@@ -21,12 +23,12 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.regex.Pattern;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -53,13 +55,24 @@ import org.apache.maven.model.building.ModelBuildingResult;
 import org.apache.maven.model.building.ModelSource2;
 import org.apache.maven.model.resolution.ModelResolver;
 import org.apache.maven.model.resolution.UnresolvableModelException;
+import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
+import org.eclipse.aether.DefaultRepositorySystemSession;
+import org.eclipse.aether.RepositorySystem;
+import org.eclipse.aether.artifact.DefaultArtifact;
+import org.eclipse.aether.repository.LocalRepository;
+import org.eclipse.aether.repository.RemoteRepository;
+import org.eclipse.aether.resolution.VersionRangeRequest;
+import org.eclipse.aether.resolution.VersionRangeResolutionException;
+import org.eclipse.aether.resolution.VersionRangeResult;
+import org.eclipse.aether.supplier.RepositorySystemSupplier;
+import org.eclipse.aether.version.Version;
 
 @CommandDefinition(name = "maven-dep-graph",
         description = "maven-dep-graph",
         version = "1.0.0",
         generateHelp = true)
 public class MavenDepGraph implements Command<CommandInvocation> {
-    private final PomResolver pomResolver = new PomResolver();
+    private PomResolver pomResolver;
     @OptionList(shortName = 'a', aliases = {"artifact"}, required = true)
     private Set<String> artifacts;
     @OptionList(shortName = 'r', aliases = {"repository"})
@@ -68,6 +81,9 @@ public class MavenDepGraph implements Command<CommandInvocation> {
     private String outputFileName;
     private Set<String> validFormats = Set.of("png", "svg");
     private Map<String, List<String>> deps = new HashMap<>();
+
+    private static final String MAVEN_CENTRAL = "https://repo1.maven.org/maven2";
+    private static final Path DEFAULT_LOCAL_REPO = Path.of(System.getProperty("user.home"), ".m2", "repository");
 
     public static void main(String[] args) throws MalformedURLException {
         AeshRuntimeRunner.builder()
@@ -79,11 +95,14 @@ public class MavenDepGraph implements Command<CommandInvocation> {
     @Override
     public CommandResult execute(CommandInvocation invocation) {
         try {
+            Set<String> repos = new HashSet<>();
+
             if (repositories != null) {
-                for (String repository : repositories) {
-                    pomResolver.addRemoteRepository(repository);
-                }
+                repos.addAll(repositories);
             }
+
+            pomResolver = new PomResolver(DEFAULT_LOCAL_REPO, repos);
+
 
             for (String artifact : artifacts) {
                 processArtifact(gavToDependency(artifact));
@@ -102,6 +121,14 @@ public class MavenDepGraph implements Command<CommandInvocation> {
         if ("test".equals(parent.getScope())) {
             return;
         }
+        try {
+            String resolvedVersion = pomResolver.resolveVersionRange(
+                    parent.getGroupId(), parent.getArtifactId(), parent.getVersion());
+            parent.setVersion(resolvedVersion);
+        } catch (VersionRangeResolutionException e) {
+            System.err.println("WARNING: Unable to resolve version range for " + depToGav(parent));
+            return;
+        }
         String parentGav = depToGav(parent);
         if (!deps.containsKey(parentGav)) {
             try {
@@ -109,8 +136,13 @@ public class MavenDepGraph implements Command<CommandInvocation> {
                 List<String> localDeps = deps.computeIfAbsent(parentGav, k -> new ArrayList<>());
                 for (Dependency dep : model.getDependencies()) {
                     try {
+                        String resolvedDepVersion = pomResolver.resolveVersionRange(
+                                dep.getGroupId(), dep.getArtifactId(), dep.getVersion());
+                        dep.setVersion(resolvedDepVersion);
                         localDeps.add(depToGav(dep));
                         processArtifact(dep);
+                    } catch (VersionRangeResolutionException e) {
+                        System.err.println("WARNING: Unable to resolve version range for " + depToGav(dep));
                     } catch (IOException | ModelBuildingException e) {
                         System.err.println("WARNING: Unable to build model for " + dep);
                     }
@@ -190,20 +222,37 @@ public class MavenDepGraph implements Command<CommandInvocation> {
     }
 
     private static class PomResolver {
-        private static final String MAVEN_CENTRAL = "https://repo1.maven.org/maven2";
-        private static final Path defaultLocalRepo = Path.of(System.getProperty("user.home"), ".m2", "repository");
+        private static final Pattern VERSION_RANGE_PATTERN = Pattern.compile("[\\[\\](),]");
         private final Path localRepo;
         private final Set<String> remoteRepoUrls;
         private final ModelBuilder modelBuilder;
+        private final RepositorySystem repoSystem;
+        private final DefaultRepositorySystemSession repoSession;
+        private final List<RemoteRepository> remoteRepositories;
 
-        PomResolver() {
-            this(defaultLocalRepo, List.of(MAVEN_CENTRAL));
-        }
-
-        PomResolver(Path localRepo, List<String> remoteRepoUrls) {
+        PomResolver(Path localRepo, Set<String> remoteRepoUrls) {
             this.localRepo = localRepo;
             this.remoteRepoUrls = new HashSet<>(remoteRepoUrls);
             this.modelBuilder = new DefaultModelBuilderFactory().newInstance();
+            this.repoSystem = new RepositorySystemSupplier().get();
+            this.repoSession = MavenRepositorySystemUtils.newSession();
+            this.repoSession.setLocalRepositoryManager(
+                    repoSystem.newLocalRepositoryManager(repoSession, new LocalRepository(localRepo.toFile())));
+            this.remoteRepositories = new ArrayList<>();
+            for (String url : this.remoteRepoUrls) {
+                remoteRepositories.add(new RemoteRepository.Builder(repoId(url), "default", url).build());
+            }
+        }
+
+//        void addRemoteRepository(String url) {
+//            String normalized = url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+//            remoteRepoUrls.add(normalized);
+//            remoteRepositories.add(new RemoteRepository.Builder(repoId(normalized), "default", normalized).build());
+//        }
+
+        private String repoId(String url) {
+            return (url.contains("repo1.maven.org") || url.contains("repo.maven.apache.org")) ?
+                "central" : "repo-" + Integer.toHexString(url.hashCode());
         }
 
         private static void downloadFromRemotes(Set<String> remoteRepoUrls, String groupId, String artifactId, String version, Path targetPath) throws IOException {
@@ -222,11 +271,6 @@ public class MavenDepGraph implements Command<CommandInvocation> {
                         return;
                     }
                     lastFailure = new IOException("HTTP " + responseCode + " for " + url);
-                } catch (IllegalArgumentException e) {
-                    // Currently, version ranges (e.g, '[1.0.0,)') are not handled and cause parsing errors trying to
-                    // resolve the URL for the dependency. If this happens, for now we just wrap it in an IOException
-                    // to let processing continue for any remaining dependencies.
-                    throw new IOException(e);
                 } catch (IOException e) {
                     lastFailure = e;
                 } finally {
@@ -255,7 +299,6 @@ public class MavenDepGraph implements Command<CommandInvocation> {
             return localPom;
         }
 
-
         private static Path pomPath(Path repoBase, String groupId, String artifactId, String version) {
             return repoBase
                     .resolve(groupId.replace('.', '/'))
@@ -274,18 +317,34 @@ public class MavenDepGraph implements Command<CommandInvocation> {
                     version);
         }
 
-        void addRemoteRepository(String url) {
-            remoteRepoUrls.add(url.endsWith("/") ? url.substring(0, url.length() - 1) : url);
+        String resolveVersionRange(String groupId, String artifactId, String version) throws VersionRangeResolutionException {
+            if (version == null || !VERSION_RANGE_PATTERN.matcher(version).find()) {
+                return version;
+            }
+            VersionRangeRequest request = new VersionRangeRequest();
+            request.setArtifact(new DefaultArtifact(groupId, artifactId, "pom", version));
+            request.setRepositories(remoteRepositories);
+            VersionRangeResult result = repoSystem.resolveVersionRange(repoSession, request);
+            Version highest = result.getHighestVersion();
+            if (highest == null) {
+                throw new VersionRangeResolutionException(result, "No versions matched range " + version + " for " + groupId + ":" + artifactId);
+            }
+            return highest.toString();
         }
 
         Model resolve(String groupId, String artifactId, String version) throws ModelBuildingException, UnresolvableModelException {
+            try {
+                version = resolveVersionRange(groupId, artifactId, version);
+            } catch (VersionRangeResolutionException e) {
+                throw new UnresolvableModelException(e.getMessage(), groupId, artifactId, version, e);
+            }
 
             DefaultModelBuildingRequest request = new DefaultModelBuildingRequest();
             request.setModelSource(new FileModelSource(getLocalPom(localRepo, remoteRepoUrls, groupId, artifactId, version).toFile()));
             request.setValidationLevel(ModelBuildingRequest.VALIDATION_LEVEL_MINIMAL);
             request.setProcessPlugins(false);
             request.setSystemProperties(System.getProperties());
-            request.setModelResolver(new LocalRemoteModelResolver(localRepo, remoteRepoUrls));
+            request.setModelResolver(new LocalRemoteModelResolver(localRepo, remoteRepoUrls, repoSystem, repoSession, remoteRepositories));
 
             ModelBuildingResult result = modelBuilder.build(request);
             return result.getEffectiveModel();
@@ -294,14 +353,43 @@ public class MavenDepGraph implements Command<CommandInvocation> {
         private static final class LocalRemoteModelResolver implements ModelResolver {
             private final Path localRepo;
             private final Set<String> remoteRepoUrls;
+            private final RepositorySystem repoSystem;
+            private final DefaultRepositorySystemSession repoSession;
+            private final List<RemoteRepository> remoteRepositories;
 
-            private LocalRemoteModelResolver(Path localRepo, Set<String> remoteRepoUrls) {
+            private LocalRemoteModelResolver(Path localRepo, Set<String> remoteRepoUrls,
+                                             RepositorySystem repoSystem, DefaultRepositorySystemSession repoSession,
+                                             List<RemoteRepository> remoteRepositories) {
                 this.localRepo = localRepo;
                 this.remoteRepoUrls = remoteRepoUrls;
+                this.repoSystem = repoSystem;
+                this.repoSession = repoSession;
+                this.remoteRepositories = remoteRepositories;
+            }
+
+            private String resolveRange(String groupId, String artifactId, String version) throws UnresolvableModelException {
+                if (version == null || !VERSION_RANGE_PATTERN.matcher(version).find()) {
+                    return version;
+                }
+                try {
+                    VersionRangeRequest request = new VersionRangeRequest();
+                    request.setArtifact(new DefaultArtifact(groupId, artifactId, "pom", version));
+                    request.setRepositories(remoteRepositories);
+                    VersionRangeResult result = repoSystem.resolveVersionRange(repoSession, request);
+                    Version highest = result.getHighestVersion();
+                    if (highest == null) {
+                        throw new UnresolvableModelException("No versions matched range " + version,
+                                groupId, artifactId, version);
+                    }
+                    return highest.toString();
+                } catch (VersionRangeResolutionException e) {
+                    throw new UnresolvableModelException(e.getMessage(), groupId, artifactId, version, e);
+                }
             }
 
             @Override
             public ModelSource2 resolveModel(String groupId, String artifactId, String version) throws UnresolvableModelException {
+                version = resolveRange(groupId, artifactId, version);
                 return new FileModelSource(getLocalPom(localRepo, remoteRepoUrls, groupId, artifactId, version).toFile());
             }
 
@@ -335,7 +423,7 @@ public class MavenDepGraph implements Command<CommandInvocation> {
 
             @Override
             public ModelResolver newCopy() {
-                return new LocalRemoteModelResolver(localRepo, remoteRepoUrls);
+                return new LocalRemoteModelResolver(localRepo, remoteRepoUrls, repoSystem, repoSession, remoteRepositories);
             }
         }
     }
